@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
+    },
+    "mempalace": {
+      "type": "stdio",
+      "command": "mempalace-mcp",
+      "args": []
+    }
+  }
+}

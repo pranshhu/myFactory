@@ -1,0 +1,64 @@
+# The automatic rungs of the gate ladder. Make every job a required status check
+# in branch protection: agents cannot merge around a required check.
+name: gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }} # organisation repos only; free key from gitleaks.io
+
+  sast:
+    runs-on: ubuntu-latest
+    container: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --config auto --error
+
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `make check` is the project's single definition of green: lint with the
+      # complexity budgets, typecheck, unit and integration tests. It runs inside the
+      # same Docker image as on every developer's and builder's machine, so there is
+      # no toolchain to set up here, and it is the command every ticket lists under
+      # "Done means".
+      - run: make check
+
+  strix:
+    # App-layer security scan of the PR diff. Needs repository secrets STRIX_LLM and LLM_API_KEY.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      STRIX_LLM: ${{ secrets.STRIX_LLM }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+    steps:
+      - name: Require Strix secrets
+        run: |
+          [ -n "$LLM_API_KEY" ] || { echo "Set the STRIX_LLM and LLM_API_KEY repository secrets. This gate does not pass by being unconfigured." >&2; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: curl -sSL https://strix.ai/install | bash
+      - run: strix -n -t ./ --scan-mode quick --scope-mode diff --diff-base "origin/$BASE_REF" --max-budget 10
+        env:
+          BASE_REF: ${{ github.base_ref }}
+      - name: Fail unless the scan completed
+        run: |
+          status=$(jq -r .status "$(ls -t strix_runs/*/run.json | head -1)")
+          [ "$status" = completed ] || { echo "Strix run status is '$status' (budget exhausted?). Raise --max-budget." >&2; exit 1; }

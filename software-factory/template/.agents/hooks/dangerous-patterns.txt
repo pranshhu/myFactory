@@ -1,0 +1,34 @@
+# One POSIX ERE per line, matched case-insensitively against each line of a shell command.
+# Catastrophic and irreversible only. Recoverable commands (rm -rf node_modules,
+# git clean -fdx, git reset --hard) stay allowed; over-blocking trains agents to route around the guard.
+# Use [[:space:]], never \s. After any change run: .agents/hooks/deny-dangerous.sh --test
+#
+# Known false positive: a harmless command whose ARGUMENT text contains one of these
+# strings (a commit message quoting "git push --force"). Put the text in a file instead.
+
+# rm aimed at /, ~, $HOME, a system dir, a whole user home, or .git
+(^|[;&|(]|[[:space:]])rm[[:space:]]+(-[^[:space:]]+[[:space:]]+)*["']?(/|/\*|~|~/|\$HOME/?|\$\{HOME\}/?|/(home|etc|usr|var|boot|bin|lib|opt|root)(/[^/[:space:]]*)?/?|(\./)?\.git/?)["']?([[:space:]]|[;&|)]|$)
+
+# force push (--force-with-lease stays allowed), +refspec, mirror
+git[[:space:]]+push([[:space:]]+[^;&|]*)?[[:space:]](--force|-f|--mirror)([[:space:]]|$)
+git[[:space:]]+push[[:space:]][^;&|]*[[:space:]]\+[^[:space:]]+
+
+# deleting the default branch or the whole repo
+git[[:space:]]+push[[:space:]][^;&|]*(--delete[[:space:]]+(main|master)|[[:space:]]:(main|master))([[:space:]]|$)
+gh[[:space:]]+repo[[:space:]]+delete
+
+# disks and filesystems
+(^|[;&|(]|[[:space:]])mkfs(\.[a-z0-9]+)?[[:space:]]
+dd[[:space:]][^;&|]*of=/dev/(sd|nvme|vd|hd|mmcblk)
+>[[:space:]]*/dev/(sd|nvme|vd|hd|mmcblk)
+ch(mod|own)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*[^[:space:]]+[[:space:]]+(/|~|\$HOME)/?([[:space:]]|$)
+:\(\)[[:space:]]*\{
+
+# infrastructure: humans apply and destroy (see the infra-change skill)
+(terraform|tofu)[[:space:]]+destroy
+(terraform|tofu)[[:space:]]+apply[^;&|]*-auto-approve
+
+# credentials: agent login tokens and private keys are never read, copied or sent
+antigravity-oauth-token
+\.claude/\.credentials
+\.ssh/id_[a-z0-9]+([[:space:]]|["']|$)
